@@ -41,7 +41,7 @@ char* logColunas[LOG_COLUMN_COUNT] = {
 };
 
 // controle de rate de log
-const unsigned long LOG_RATE = 3000;
+const unsigned long LOG_RATE = 1000;
 unsigned long ultimoLog = 0;
 
 // definindo variaveis globais do programa
@@ -127,7 +127,7 @@ void loop()
 
   if((ultimoLog + LOG_RATE) <= millis()) // Se  LOG_RATE em  milissegundos desde o último registro
   {
-    if (gps.location.isUpdated() && gps.location.isValid()) //Se os dados do GPS forem vaildos
+    if (gps.location.isUpdated()) //Se os dados do GPS forem vaildos
     {
       if (logData(ID_dispositivo, icos_inf, icos_sup, nivel)) // Registrar os dados do GPS
       {
@@ -139,11 +139,11 @@ void loop()
         Serial.println("Falha no log de dados."); // sera mostrado uma mensagem de erro no GPS
       }
     }
-    else // se nao houver dados no GPS
-    {
-      Serial.print("Nao ha dados do GPS! Satelites: "); // sera imprimido esssa mensagem
-      Serial.println(gps.satellites.value());
-    }
+//    else // se nao houver dados no GPS
+//    {
+//      Serial.print("Nao ha dados do GPS! Satelites: "); // sera imprimido esssa mensagem
+//      Serial.println(gps.satellites.value());
+//    }
   }
 
   // envia dados
@@ -315,7 +315,7 @@ void printHeader(){
   }
 }
 
-byte logData(char ID, int inf, int sup, float us)
+byte logData(char ID[2], int inf, int sup, float us)
 {
   SdFile logFile;
   bool sd_open = logFile.open(logNomeArquivo, O_RDWR | O_CREAT | O_AT_END);
