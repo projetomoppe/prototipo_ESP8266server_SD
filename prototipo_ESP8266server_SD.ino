@@ -1,6 +1,8 @@
+#include <SPI.h>              // SPI
 #include <NewPing.h>         // Sensor ultrassonico
 #include <TinyGPS++.h>       // Modulo GPS
 #include <ESP8266.h>         // Modulo WeeWiFiESP8266
+#include <SdFat.h>           // Modulo Cartão SD
 
 // definindo as constantes do programa
 // ID DO DISPOSITIVO
@@ -17,11 +19,30 @@ const float REF = 35.0; // referencia de altura de instalacao do sensor ultrasso
 
 // MODULO GPS
 static const uint32_t GPSB = 9600; // definindo a velocidade de comunicação do módulo GPS
-//const unsigned long RATE = 3000; // intervalo de log de dados
 
 // MODULO ESP8266
 #define SSID     "moppe_wireless"
 #define PASSWORD "Moppe123JAC12"
+
+// MODULO SD CARD
+SdFat sdCard;
+const int pinSD = 6;
+
+// nome dos arquivos
+#define LOG_FILE_PREFIX "log"
+#define MAX_LOG_FILES 100
+#define LOG_FILE_SUFIX "csv"
+char logNomeArquivo[10];
+
+// colunas do arquivo
+#define LOG_COLUMN_COUNT 8
+char* logColunas[LOG_COLUMN_COUNT] = {
+  "ID", "ICOS Inferior", "ICOS Superior", "Nivel Ultrassonico", "Latitude", "Longitude", "Data", "Hora"
+};
+
+// controle de rate de log
+const unsigned long LOG_RATE = 3000;
+unsigned long ultimoLog = 0;
 
 // definindo variaveis globais do programa
 float nivel = 0.0;
@@ -84,21 +105,46 @@ void setup()
   } else {
       Serial.println(F("TimeOut do servidro TCP: ERRO"));
   }
+
+  // Inicializa o modulo SD
+  if(!sdCard.begin(pinSD,SPI_HALF_SPEED))
+    sdCard.initErrorHalt();
+
+  // cria novo arquivo a cada inicializacao
+  updateFileName(); // Each time we start, create a new file, increment the number
+  printHeader(); // Print a header at the top of the new file
   
   Serial.println(F("Setup Finalizado"));
 } // fecha void setup()
 
 void loop()
-{
-  // debug only
-  digitalWrite(S1, HIGH);
-  digitalWrite(S2, LOW);
-  
+{ 
   // obtencao dos dados
   icos_inf     = digitalRead(S1); // leitura do sensor ICOS inferior
   icos_sup     = digitalRead(S2); // leitura do sensor ICOS superior
   nivel        = dados_su();      // obtencao do nivel dado pelo sensor ultrassonico
   dados_gps();                    // alimenta o objeto gps
+
+  if((ultimoLog + LOG_RATE) <= millis()) // Se  LOG_RATE em  milissegundos desde o último registro
+  {
+    if (gps.location.isUpdated() && gps.location.isValid()) //Se os dados do GPS forem vaildos
+    {
+      if (logData(ID_dispositivo, icos_inf, icos_sup, nivel)) // Registrar os dados do GPS
+      {
+        Serial.println("Dados Logados!"); //mostratr essa mensagem
+        ultimoLog = millis(); // atualizar a variavel
+      }
+      else // se nao atualizou
+      {
+        Serial.println("Falha no log de dados."); // sera mostrado uma mensagem de erro no GPS
+      }
+    }
+    else // se nao houver dados no GPS
+    {
+      Serial.print("Nao ha dados do GPS! Satelites: "); // sera imprimido esssa mensagem
+      Serial.println(gps.satellites.value());
+    }
+  }
 
   // envia dados
   if ((gps.location.isValid()) && (gps.date.isValid()) && (gps.time.isValid()))
@@ -187,22 +233,8 @@ void loop()
     uint8_t buffer[128] = {0};
     uint32_t len_req = wifi.recv(&mux_id, buffer, sizeof(buffer), 100);
 
-    // se hovuve requisicao, responde
+    // se houve requisicao, responde
     if (len_req > 0) {
-      
-        // mensagens de debug para monitor serial
-//        Serial.print("Status:[");
-//        Serial.print(wifi.getIPStatus().c_str());
-//        Serial.println("]");
-//        
-//        Serial.print("Recebido de :");
-//        Serial.print(mux_id);
-//        Serial.print("[");
-//        for(uint32_t i = 0; i < len; i++) {
-//            Serial.print((char)buffer[i]);
-//        }
-//        Serial.print("]\r\n");
-
         // envia dados
         if(wifi.send(mux_id, web, len)) {
             Serial.println(F("Dados enviados: OK"));
@@ -243,4 +275,73 @@ float dados_su(){
 void dados_gps(){
   while(Serial3.available())
     gps.encode(Serial3.read());
+}
+
+void updateFileName(){
+
+  for(int i=0; i < MAX_LOG_FILES; i++){
+    memset(logNomeArquivo, 0, strlen(logNomeArquivo));
+    sprintf(logNomeArquivo,"%s%d.%s", LOG_FILE_PREFIX, i, LOG_FILE_SUFIX);
+    
+    if (!sdCard.exists(logNomeArquivo))
+      break;
+    else{
+      Serial.print(logNomeArquivo);
+      Serial.println(" existe!");
+    }
+  }
+
+  Serial.print("Nome do Arquivo: ");
+  Serial.println(logNomeArquivo);
+}
+
+void printHeader(){
+  
+  SdFile logFile;
+  bool sd_open = logFile.open(logNomeArquivo, O_RDWR | O_CREAT | O_AT_END);
+  
+  if(sd_open){
+    for(int i=0; i < LOG_COLUMN_COUNT; i++){
+      logFile.print(logColunas[i]);
+      if(i < (LOG_COLUMN_COUNT -1))
+         logFile.print(',');
+      else
+         logFile.println();
+    }
+    logFile.close();
+  }
+  else{
+    sdCard.errorHalt("\r\nErro na abertura do arquivo!\r\n");
+  }
+}
+
+byte logData(char ID, int inf, int sup, float us)
+{
+  SdFile logFile;
+  bool sd_open = logFile.open(logNomeArquivo, O_RDWR | O_CREAT | O_AT_END);
+  
+  if(sd_open){
+    logFile.print(ID);
+    logFile.print(',');
+    logFile.print(inf);
+    logFile.print(',');
+    logFile.print(sup);
+    logFile.print(',');
+    logFile.print(us);
+    logFile.print(',');
+    logFile.print(gps.location.lat(), 6);
+    logFile.print(',');
+    logFile.print(gps.location.lng(), 6);
+    logFile.print(',');
+    logFile.print(gps.date.value());
+    logFile.print(',');
+    logFile.print(gps.time.value());
+    logFile.println();
+    logFile.close();
+    return 1;
+  }
+  else{
+    sdCard.errorHalt("\r\nErro na abertura do arquivo!\r\n");
+    return 0;
+  }
 }
