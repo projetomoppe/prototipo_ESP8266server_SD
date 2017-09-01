@@ -69,6 +69,23 @@ void setup()
 
   Serial.println(F("Iniciando Setup"));
 
+  delay(5000);
+  if(wifi.kick())
+    Serial.println(F("Modulo ESP8266 iniciado..."));
+  else{
+    Serial.println(F("Erro na inicializacao do Modulo ESP8266..."));
+    while(1);
+  }
+
+  delay(300);
+  
+  if(wifi.reset())
+    Serial.println(F("Modulo ESP8266 reiniciado..."));
+  else{
+    Serial.println(F("Falha na reinicializacao do Modulo ESP8266..."));
+    Serial.println(F("Persistindo com a conexao..."));
+  }
+    
   // especifica modo de operacao
   if (wifi.setOprToStation()) {
       Serial.println(F("Modo Conecta a WiFi: OK"));
