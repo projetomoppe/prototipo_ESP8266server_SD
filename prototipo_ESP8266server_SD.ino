@@ -41,7 +41,7 @@ char* logColunas[LOG_COLUMN_COUNT] = {
 };
 
 // controle de rate de log
-const unsigned long LOG_RATE = 1000;
+const unsigned long LOG_RATE = 3000;
 unsigned long ultimoLog = 0;
 
 // definindo variaveis globais do programa
@@ -57,33 +57,29 @@ ESP8266 wifi(Serial1, 115200);
 void setup()
 { 
   Serial.begin(115200); // comunicacao Serial com o computador
-  Serial.flush();       // limpa serial
   Serial3.begin(GPSB);  // modulo GPS
 
   // define os sensores ICOS como input
   pinMode(S1, INPUT);
   pinMode(S2, INPUT);
 
-  Serial.println(F("----------- PICJr - MOPPE -----------"));
+  Serial.println(F("\r\n----------- PICJr - MOPPE -----------"));
   Serial.println(F("------- Programa inicializado -------\r\n"));
 
   Serial.println(F("Iniciando Setup"));
-
-  delay(5000);
+  
   if(wifi.kick())
     Serial.println(F("Modulo ESP8266 iniciado..."));
   else{
-    Serial.println(F("Erro na inicializacao do Modulo ESP8266..."));
-    while(1);
+    Serial.println(F("falha em wifi.kick..."));
   }
-
-  delay(300);
   
-  if(wifi.reset())
+  if(wifi.restart())
     Serial.println(F("Modulo ESP8266 reiniciado..."));
   else{
-    Serial.println(F("Falha na reinicializacao do Modulo ESP8266..."));
-    Serial.println(F("Persistindo com a conexao..."));
+    Serial.println(F("falha em wifi.restart..."));
+    Serial.println(F("tentando novamente..."));
+    wifi.restart();
   }
     
   // especifica modo de operacao
@@ -124,12 +120,12 @@ void setup()
   }
 
   // Inicializa o modulo SD
-  if(!sdCard.begin(pinSD,SPI_HALF_SPEED))
+  if(!sdCard.begin(pinSD, SPI_HALF_SPEED))
     sdCard.initErrorHalt();
 
   // cria novo arquivo a cada inicializacao
-  updateFileName(); // Each time we start, create a new file, increment the number
-  printHeader(); // Print a header at the top of the new file
+  updateFileName(); // cria um novo arquivo a cada inicializacao
+  printHeader(); // imprime o cabecalho do arquivo
   
   Serial.println(F("Setup Finalizado"));
 } // fecha void setup()
@@ -144,23 +140,15 @@ void loop()
 
   if((ultimoLog + LOG_RATE) <= millis()) // Se  LOG_RATE em  milissegundos desde o último registro
   {
-    if (gps.location.isUpdated()) //Se os dados do GPS forem vaildos
+    if (logData(ID_dispositivo, icos_inf, icos_sup, nivel)) // Registrar os dados do GPS
     {
-      if (logData(ID_dispositivo, icos_inf, icos_sup, nivel)) // Registrar os dados do GPS
-      {
-        Serial.println("Dados Logados!"); //mostratr essa mensagem
-        ultimoLog = millis(); // atualizar a variavel
-      }
-      else // se nao atualizou
-      {
-        Serial.println("Falha no log de dados."); // sera mostrado uma mensagem de erro no GPS
-      }
+      Serial.println("Dados Logados!"); //mostratr essa mensagem
+      ultimoLog = millis(); // atualizar a variavel
     }
-//    else // se nao houver dados no GPS
-//    {
-//      Serial.print("Nao ha dados do GPS! Satelites: "); // sera imprimido esssa mensagem
-//      Serial.println(gps.satellites.value());
-//    }
+    else // se nao atualizou
+    {
+      Serial.println("Falha no log de dados."); // sera mostrado uma mensagem de erro no GPS
+    }
   }
 
   // envia dados
